@@ -1,0 +1,158 @@
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+
+-- [[ 安全檢查：等待載入 ]] --
+if not player then 
+    repeat task.wait() player = Players.LocalPlayer until player 
+end
+local backpack = player:WaitForChild("Backpack")
+local character = player.Character or player.CharacterAdded:Wait()
+local cam = workspace.CurrentCamera
+local mouse = player:GetMouse()
+
+-- [[ 1. 外部圖片下載邏輯 ]] --
+local function GetExternalAsset(url, fileName)
+    if not isfile(fileName) then
+        local success, content = pcall(function() return game:HttpGet(url) end)
+        if success then 
+            writefile(fileName, content) 
+        else
+            return nil
+        end
+    end
+    return getcustomasset(fileName)
+end
+
+local INSTALL_ICON = GetExternalAsset("https://i.pinimg.com/736x/a4/46/40/a4464059a88947ef1238f0b355e752ef.jpg", "Monitor_Install.png")
+local PANEL_ICON = GetExternalAsset("https://cdn.phototourl.com/free/2026-03-28-04333e09-8b2c-4ffb-964f-43054e7d3196.jpg", "Monitor_Panel.png")
+
+-- [[ 2. 系統變數 ]] --
+local Cameras = {} 
+local CurrentIdx = 1
+local tempCF = nil
+
+-- [[ 3. UI 介面設定 ]] --
+local ScreenGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+ScreenGui.Name = "BaconMonitorUI_Final"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Enabled = false
+
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size = UDim2.new(0, 260, 0, 85)
+MainFrame.Position = UDim2.new(0.5, -130, 0.05, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+MainFrame.BackgroundTransparency = 0.2
+Instance.new("UICorner", MainFrame)
+Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(0, 255, 150)
+
+local CamNameLabel = Instance.new("TextLabel", MainFrame)
+CamNameLabel.Size = UDim2.new(1, 0, 0.4, 0)
+CamNameLabel.Text = "無頻道..."
+CamNameLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
+CamNameLabel.BackgroundTransparency = 1
+CamNameLabel.Font = Enum.Font.GothamBold
+CamNameLabel.TextSize = 16
+
+local function createBtn(text, pos, size, color)
+    local btn = Instance.new("TextButton", MainFrame)
+    btn.Text = text
+    btn.Size = size
+    btn.Position = pos
+    btn.BackgroundColor3 = color
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.Font = Enum.Font.GothamBold
+    Instance.new("UICorner", btn)
+    return btn
+end
+
+local PrevBtn = createBtn("<", UDim2.new(0.05, 0, 0.45, 0), UDim2.new(0, 40, 0, 35), Color3.fromRGB(60, 60, 60))
+local NextBtn = createBtn(">", UDim2.new(0.8, 0, 0.45, 0), UDim2.new(0, 40, 0, 35), Color3.fromRGB(60, 60, 60))
+local DelBtn = createBtn("刪除", UDim2.new(0.25, 0, 0.45, 0), UDim2.new(0.5, 0, 0, 35), Color3.fromRGB(150, 0, 0))
+
+local NameGui = Instance.new("Frame", ScreenGui)
+NameGui.Size = UDim2.new(0, 250, 0, 130)
+NameGui.Position = UDim2.new(0.5, -125, 0.35, 0)
+NameGui.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+NameGui.Visible = false
+Instance.new("UICorner", NameGui)
+
+local NameInput = Instance.new("TextBox", NameGui)
+NameInput.Size = UDim2.new(0.8, 0, 0.3, 0)
+NameInput.Position = UDim2.new(0.1, 0, 0.2, 0)
+NameInput.PlaceholderText = "監視器名稱..."
+NameInput.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+NameInput.TextColor3 = Color3.new(1, 1, 1)
+
+local ConfirmBtn = Instance.new("TextButton", NameGui)
+ConfirmBtn.Text = "確認安裝"
+ConfirmBtn.Size = UDim2.new(0.8, 0, 0.3, 0)
+ConfirmBtn.Position = UDim2.new(0.1, 0, 0.6, 0)
+ConfirmBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 200)
+ConfirmBtn.TextColor3 = Color3.new(1, 1, 1)
+Instance.new("UICorner", ConfirmBtn)
+
+-- [[ 4. 核心功能 ]] --
+local function updateView()
+    if #Cameras > 0 then
+        local data = Cameras[CurrentIdx]
+        cam.CameraType = Enum.CameraType.Scriptable
+        cam.CFrame = data.cf
+        CamNameLabel.Text = "頻道: " .. data.name
+    else
+        cam.CameraType = Enum.CameraType.Custom
+        ScreenGui.Enabled = false
+    end
+end
+
+-- 安裝工具 (使用專屬圖片)
+local installTool = Instance.new("Tool")
+installTool.Name = "🛠️ 安裝監視器"
+installTool.TextureId = INSTALL_ICON or ""
+installTool.RequiresHandle = false
+installTool.Activated:Connect(function()
+    local targetPos = mouse.Hit.p
+    local char = player.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        tempCF = CFrame.lookAt(targetPos + Vector3.new(0, 1, 0), char.HumanoidRootPart.Position)
+        ScreenGui.Enabled = true
+        NameGui.Visible = true
+    end
+end)
+installTool.Parent = backpack
+
+ConfirmBtn.MouseButton1Click:Connect(function()
+    local name = (NameInput.Text ~= "" and NameInput.Text) or ("Cam " .. #Cameras+1)
+    table.insert(Cameras, {name = name, cf = tempCF})
+    NameGui.Visible = false
+    NameInput.Text = ""
+end)
+
+-- 面板工具 (使用專屬圖片)
+local panelTool = Instance.new("Tool")
+panelTool.Name = "📱 監視器面板"
+panelTool.TextureId = PANEL_ICON or ""
+panelTool.RequiresHandle = false
+panelTool.Equipped:Connect(function()
+    if #Cameras > 0 then
+        ScreenGui.Enabled = true
+        updateView()
+    end
+end)
+panelTool.Unequipped:Connect(function()
+    cam.CameraType = Enum.CameraType.Custom
+    if not NameGui.Visible then ScreenGui.Enabled = false end
+end)
+panelTool.Parent = backpack
+
+-- 切換與刪除邏輯
+NextBtn.MouseButton1Click:Connect(function() if #Cameras > 0 then CurrentIdx = (CurrentIdx % #Cameras) + 1 updateView() end end)
+PrevBtn.MouseButton1Click:Connect(function() if #Cameras > 0 then CurrentIdx = (CurrentIdx - 2 + #Cameras) % #Cameras + 1 updateView() end end)
+DelBtn.MouseButton1Click:Connect(function() 
+    if #Cameras > 0 then 
+        table.remove(Cameras, CurrentIdx) 
+        CurrentIdx = math.clamp(CurrentIdx, 1, math.max(1, #Cameras)) 
+        updateView() 
+    end 
+end)
+
+print("✅ 雙圖標監視系統已啟動！安裝與面板圖案已分開設定。")
