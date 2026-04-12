@@ -1,0 +1,196 @@
+-- [[ Fredbear 終極獵食者 - 視線遮蔽 & 長程偵測版 ]]
+
+local player = game.Players.LocalPlayer
+local pGui = player:WaitForChild("PlayerGui")
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local UIS = game:GetService("UserInputService")
+local SoundService = game:GetService("SoundService")
+local assetId = "rbxassetid://136058823136493"
+
+-- 音效配置
+local killSoundId = "rbxassetid://94624102598882"
+local runSoundId = "rbxassetid://117057161454198"
+local lureSoundId = "rbxassetid://133701137571082" 
+local ambientSounds = {"rbxassetid://139772747602923", "rbxassetid://128381389827895"}
+
+-- AI 參數
+local VIEW_DISTANCE = 120 -- 前方偵測距離加大
+local KILL_RANGE = 7
+local NORMAL_SPEED = 30
+local CHASE_SPEED = 64
+local isNightMode = false 
+local isLured = false 
+local lureExpireTime = 0
+
+-- --- [ 功能函數 ] ---
+
+local function setNoCollision(model)
+    for _, part in ipairs(model:GetDescendants()) do
+        if part:IsA("BasePart") then
+            part.CanCollide = false
+            part.CanTouch = false
+            part.CanQuery = false
+        end
+    end
+end
+
+-- 視線檢查函數：判斷兩點之間是否有牆
+local function canSeeTarget(startPart, targetPart)
+    local origin = startPart.Position
+    local direction = (targetPart.Position - origin)
+    
+    local raycastParams = RaycastParams.new()
+    -- 忽略 Fredbear 自己和玩家的角色，只看有沒有場景零件
+    raycastParams.FilterDescendantsInstances = {startPart.Parent, targetPart.Parent}
+    raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+    
+    local result = workspace:Raycast(origin, direction, raycastParams)
+    
+    if result then
+        -- 如果射線撞到了東西，代表中間有牆
+        return false
+    else
+        -- 如果射線沒撞到東西，代表視線清晰
+        return true
+    end
+end
+
+local function playGlobalSound(id, volume, looped)
+    local sound = Instance.new("Sound")
+    sound.SoundId = id
+    sound.Volume = volume or 1
+    sound.Looped = looped or false
+    sound.Parent = SoundService
+    sound:Play()
+    if not looped then task.delay(15, function() if sound then sound:Destroy() end end) end
+    return sound
+end
+
+local function triggerLure()
+    playGlobalSound(lureSoundId, 2.5)
+    isLured = true
+    lureExpireTime = tick() + 7
+end
+
+-- --- [ 核心 AI 邏輯 ] ---
+
+function spawnFredbear()
+    -- 初始化按鈕偵測
+    if UIS.TouchEnabled and not pGui:FindFirstChild("LureGui") then
+        local lureGui = Instance.new("ScreenGui", pGui)
+        lureGui.Name = "LureGui"; lureGui.ResetOnSpawn = false
+        local lureBtn = Instance.new("TextButton", lureGui)
+        lureBtn.Size = UDim2.new(0, 90, 0, 90); lureBtn.Position = UDim2.new(0.75, 0, 0.65, 0)
+        lureBtn.BackgroundColor3 = Color3.fromRGB(180, 0, 0); lureBtn.Text = "引誘"; lureBtn.TextColor3 = Color3.new(1,1,1)
+        Instance.new("UICorner", lureBtn)
+        lureBtn.MouseButton1Click:Connect(triggerLure)
+    end
+    UIS.InputBegan:Connect(function(input, gpe) if not gpe and input.KeyCode == Enum.KeyCode.F then triggerLure() end end)
+
+    local char = player.Character or player.CharacterAdded:Wait()
+    local shadow = Instance.new("Model", workspace)
+    local root = Instance.new("Part", shadow)
+    root.Name = "HumanoidRootPart"; root.Size = Vector3.new(4, 2, 4); root.Transparency = 1; root.CanCollide = false
+    local hum = Instance.new("Humanoid", shadow)
+    hum.HipHeight = 6; root.CFrame = char.PrimaryPart.CFrame * CFrame.new(70, 10, 70)
+
+    local fredVisual = game:GetObjects(assetId)[1]
+    fredVisual.Parent = workspace
+    setNoCollision(fredVisual)
+    for _, p in ipairs(fredVisual:GetDescendants()) do if p:IsA("BasePart") then p.Anchored = true end end
+
+    RunService.RenderStepped:Connect(function()
+        if root and fredVisual then
+            fredVisual:SetPrimaryPartCFrame(root.CFrame * CFrame.new(0, -2.8, 0))
+            setNoCollision(fredVisual)
+        end
+    end)
+
+    task.spawn(function()
+        local lastTargetPos = root.Position
+        local aiState = "Roaming" 
+        local escapeStartTime = 0
+        local currentRunSound = nil
+
+        while true do
+            task.wait(0.05)
+            local targetChar = player.Character
+            local targetRoot = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+            local targetHum = targetChar and targetChar:FindFirstChild("Humanoid")
+            
+            if targetRoot and targetHum and targetHum.Health > 0 then
+                local dist = (root.Position - targetRoot.Position).Magnitude
+                local hasLOS = canSeeTarget(root, targetRoot) -- 檢查是否有視線
+
+                -- 1. 殺敵優先 (只要夠近就殺，不管有沒有牆，防止穿牆殺失敗)
+                if dist <= KILL_RANGE then
+                    playGlobalSound(killSoundId, 2); targetHum.Health = 0; isLured = false
+                    aiState = "Escaping"; escapeStartTime = tick()
+                    hum.WalkSpeed = CHASE_SPEED
+                    hum:MoveTo(root.Position + (root.Position - targetRoot.Position).Unit * 100)
+                    continue
+                end
+
+                -- 2. 引誘模式 (聲音引誘無視牆壁，鬼會往聲音來源衝)
+                if isLured and tick() < lureExpireTime then
+                    aiState = "Chasing"; hum.WalkSpeed = CHASE_SPEED; hum:MoveTo(targetRoot.Position)
+                
+                -- 3. 視覺偵測 (必須在距離內且「沒有被牆擋住」)
+                elseif dist <= VIEW_DISTANCE and hasLOS then
+                    aiState = "Chasing"
+                    hum.WalkSpeed = (dist <= 40) and CHASE_SPEED or NORMAL_SPEED
+                    hum:MoveTo(targetRoot.Position)
+                
+                -- 4. 逃跑或漫遊
+                elseif aiState == "Escaping" then
+                    if tick() - escapeStartTime > 3 or dist > 80 then aiState = "Roaming" end
+                    hum:MoveTo(root.Position + (root.Position - targetRoot.Position).Unit * 100)
+                else
+                    aiState = "Roaming"; hum.WalkSpeed = NORMAL_SPEED
+                    if (root.Position - lastTargetPos).Magnitude < 8 then
+                        task.wait(2)
+                        lastTargetPos = root.Position + Vector3.new(math.random(-60, 60), 0, math.random(-60, 60))
+                        hum:MoveTo(lastTargetPos)
+                    else
+                        hum:MoveTo(lastTargetPos)
+                    end
+                end
+            end
+
+            -- 音效控制
+            local shouldPlayRun = (aiState == "Chasing") or (aiState == "Escaping")
+            if shouldPlayRun then
+                if not currentRunSound or not currentRunSound.IsPlaying then
+                    if currentRunSound then currentRunSound:Destroy() end
+                    currentRunSound = playGlobalSound(runSoundId, 1.5, true)
+                end
+            else
+                if currentRunSound then currentRunSound:Destroy(); currentRunSound = nil end
+            end
+        end
+    end)
+end
+
+-- (模式選擇選單)
+local function createMenu()
+    local screenGui = Instance.new("ScreenGui", pGui)
+    screenGui.ResetOnSpawn = false
+    local frame = Instance.new("Frame", screenGui)
+    frame.Size = UDim2.new(0, 320, 0, 180); frame.Position = UDim2.new(0.5, -160, 0.4, -90); frame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    Instance.new("UICorner", frame)
+    local function btn(name, pos, color, mode)
+        local b = Instance.new("TextButton", frame)
+        b.Size = UDim2.new(0.4, 0, 0, 50); b.Position = pos; b.BackgroundColor3 = color; b.Text = name; b.TextColor3 = Color3.new(1,1,1)
+        Instance.new("UICorner", b)
+        b.MouseButton1Click:Connect(function()
+            screenGui:Destroy()
+            if mode == "Night" then isNightMode = true; Lighting.ClockTime = 0; Lighting.FogEnd = 80; Lighting.Brightness = 0 end
+            spawnFredbear()
+        end)
+    end
+    btn("正常模式", UDim2.new(0.07, 0, 0.55, 0), Color3.fromRGB(45, 100, 45), "Normal")
+    btn("夜晚模式", UDim2.new(0.53, 0, 0.55, 0), Color3.fromRGB(100, 45, 45), "Night")
+end
+
+createMenu()
