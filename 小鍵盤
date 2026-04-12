@@ -1,0 +1,170 @@
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "RefinedKeyMapper"
+ScreenGui.Parent = game:GetService("CoreGui")
+ScreenGui.ResetOnSpawn = false
+
+local deleteMode = false 
+local buttonCount = 0
+
+local function makeDraggable(obj, target)
+    target = target or obj
+    local dragging, dragInput, dragStart, startPos
+    obj.InputBegan:Connect(function(input)
+        if deleteMode and obj:IsA("TextButton") and obj.Name ~= "MiniToggle" then return end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = target.Position
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            target.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+    obj.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end)
+end
+
+local MiniShowBtn = Instance.new("TextButton", ScreenGui)
+MiniShowBtn.Name = "MiniToggle"
+MiniShowBtn.Size = UDim2.new(0, 40, 0, 40)
+MiniShowBtn.Position = UDim2.new(0.5, -20, 0.05, 0)
+MiniShowBtn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+MiniShowBtn.BackgroundTransparency = 0.5
+MiniShowBtn.Text = "⌨️"
+MiniShowBtn.Visible = false
+Instance.new("UICorner", MiniShowBtn).CornerRadius = UDim.new(0.5, 0)
+Instance.new("UIStroke", MiniShowBtn).Color = Color3.new(1,1,1)
+makeDraggable(MiniShowBtn)
+
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size = UDim2.new(0, 220, 0, 180)
+MainFrame.Position = UDim2.new(0.5, -110, 0.2, 0)
+MainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Instance.new("UICorner", MainFrame)
+
+local TitleBar = Instance.new("Frame", MainFrame)
+TitleBar.Size = UDim2.new(1, 0, 0, 30)
+TitleBar.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+Instance.new("UICorner", TitleBar)
+
+local TitleLabel = Instance.new("TextLabel", TitleBar)
+TitleLabel.Size = UDim2.new(1, -40, 1, 0)
+TitleLabel.Position = UDim2.new(0, 12, 0, 0)
+TitleLabel.Text = "🥓培根鍵盤按鈕🥓"
+TitleLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+TitleLabel.Font = Enum.Font.SourceSans
+TitleLabel.TextSize = 14
+TitleLabel.BackgroundTransparency = 1
+
+local HideBtn = Instance.new("TextButton", TitleBar)
+HideBtn.Size = UDim2.new(0, 18, 0, 18)
+HideBtn.Position = UDim2.new(1, -24, 0.5, -9)
+HideBtn.Text = "—"
+HideBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+HideBtn.TextColor3 = Color3.new(1, 1, 1)
+HideBtn.TextSize = 10
+Instance.new("UICorner", HideBtn).CornerRadius = UDim.new(0.5, 0)
+
+makeDraggable(TitleBar, MainFrame)
+
+local TextBox = Instance.new("TextBox", MainFrame)
+TextBox.Size = UDim2.new(0.9, 0, 0, 35)
+TextBox.Position = UDim2.new(0.05, 0, 0.25, 0)
+TextBox.PlaceholderText = "按鍵名"
+TextBox.Text = ""
+TextBox.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+TextBox.TextColor3 = Color3.new(1, 1, 1)
+TextBox.Font = Enum.Font.SourceSans
+TextBox.TextSize = 16
+Instance.new("UICorner", TextBox)
+
+local CreateBtn = Instance.new("TextButton", MainFrame)
+CreateBtn.Size = UDim2.new(0.9, 0, 0, 35)
+CreateBtn.Position = UDim2.new(0.05, 0, 0.5, 0)
+CreateBtn.Text = "建立按鈕"
+CreateBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
+CreateBtn.TextColor3 = Color3.new(1, 1, 1)
+CreateBtn.Font = Enum.Font.SourceSans
+CreateBtn.TextSize = 16
+Instance.new("UICorner", CreateBtn)
+
+local DeleteModeBtn = Instance.new("TextButton", MainFrame)
+DeleteModeBtn.Size = UDim2.new(0.9, 0, 0, 30)
+DeleteModeBtn.Position = UDim2.new(0.05, 0, 0.78, 0)
+DeleteModeBtn.Text = "刪除模式: 關"
+DeleteModeBtn.BackgroundColor3 = Color3.fromRGB(120, 30, 30)
+DeleteModeBtn.TextColor3 = Color3.new(1, 1, 1)
+DeleteModeBtn.Font = Enum.Font.SourceSans
+DeleteModeBtn.TextSize = 14
+Instance.new("UICorner", DeleteModeBtn)
+
+HideBtn.MouseButton1Click:Connect(function()
+    MainFrame.Visible = false
+    MiniShowBtn.Visible = true
+end)
+
+MiniShowBtn.MouseButton1Click:Connect(function()
+    MainFrame.Visible = true
+    MiniShowBtn.Visible = false
+end)
+
+DeleteModeBtn.MouseButton1Click:Connect(function()
+    deleteMode = not deleteMode
+    DeleteModeBtn.Text = deleteMode and "選取按鈕刪除" or "刪除模式: 關"
+    DeleteModeBtn.BackgroundColor3 = deleteMode and Color3.fromRGB(200, 0, 0) or Color3.fromRGB(120, 30, 30)
+end)
+
+CreateBtn.MouseButton1Click:Connect(function()
+    local keyStr = TextBox.Text:upper()
+    if keyStr == "" then return end
+    
+    local success, keyEnum = pcall(function() return Enum.KeyCode[keyStr] end)
+    
+    if success and keyEnum then
+        buttonCount = (buttonCount + 1) % 10
+        local FloatBtn = Instance.new("TextButton", ScreenGui)
+        FloatBtn.Size = UDim2.new(0, 55, 0, 55)
+        FloatBtn.Position = UDim2.new(0.4, buttonCount * 12, 0.4, buttonCount * 12)
+        FloatBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        FloatBtn.BackgroundTransparency = 0.65
+        FloatBtn.Text = keyStr
+        FloatBtn.TextColor3 = Color3.new(0, 0, 0)
+        FloatBtn.Font = Enum.Font.SourceSans
+        FloatBtn.TextSize = 20
+
+        Instance.new("UICorner", FloatBtn).CornerRadius = UDim.new(0.5, 0)
+        local stroke = Instance.new("UIStroke", FloatBtn)
+        stroke.Thickness = 1
+        stroke.Color = Color3.new(0, 0, 0)
+
+        makeDraggable(FloatBtn)
+
+        FloatBtn.MouseButton1Down:Connect(function()
+            if deleteMode then
+                FloatBtn:Destroy()
+            else
+                FloatBtn.BackgroundTransparency = 0.3
+                VirtualInputManager:SendKeyEvent(true, keyEnum, false, game)
+            end
+        end)
+
+        FloatBtn.MouseButton1Up:Connect(function()
+            if not deleteMode then
+                FloatBtn.BackgroundTransparency = 0.65
+                VirtualInputManager:SendKeyEvent(false, keyEnum, false, game)
+            end
+        end)
+        
+        TextBox.Text = ""
+    end
+end)
