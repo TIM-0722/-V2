@@ -190,7 +190,7 @@ Tab1:CreateSection("—— 🥓 更新公告 🥓 ——")
 
 local AboutParagraph = Tab1:CreateParagraph({
     Title = "🥓 更新公告 🥓", 
-    Content = "更新日期:2026/4/13\n\n" ..
+    Content = "更新日期:2026/4/12\n\n" ..
               "版本:2.0\n" ..
               "更新內容:\n\n" ..
               "===如下===\n\n" ..
